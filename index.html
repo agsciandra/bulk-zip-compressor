@@ -7,20 +7,8 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50 p-4 md:p-8">
+    <div class="min-h-screen bg-gradient-to-br from-gray-50 via-white to-blue-50 p-8 md:p-16">
         <div class="max-w-7xl mx-auto">
-            <!-- Header -->
-            <div class="header-container">
-                <div class="header-content">
-                    <div class="header-icon">
-                        <div class="sparkles-icon">✨</div>
-                    </div>
-                    <h1 class="header-title">ZIP Compressor</h1>
-                </div>
-                <p class="header-subtitle">
-                    Upload any ZIP file - we'll compress the images and videos, and leave everything else exactly as it is
-                </p>
-            </div>
 
             <div class="grid lg:grid-cols-2 gap-8">
                 <!-- Left Column -->
@@ -36,7 +24,7 @@
                                     Drag and drop your ZIP file, or click to browse and select
                                 </p>
                                 <label for="fileInput" class="upload-button">
-                                    <div class="upload-icon-small">📤</div>
+                                    <div class="upload-icon-small" id="uploadIcon">📤</div>
                                     Choose ZIP File
                                 </label>
                                 <div class="file-size-limit">Maximum file size: 500MB</div>
@@ -45,7 +33,7 @@
                             <div class="file-selected" id="fileSelected" style="display: none;">
                                 <div class="uploaded-file-header">
                                     <div class="uploaded-file-icon">
-                                        <div class="folder-icon">📁</div>
+                                        <div class="folder-icon" id="folderIcon">📁</div>
                                     </div>
                                     <h3 class="uploaded-file-title">Uploaded file</h3>
                                 </div>
@@ -64,7 +52,7 @@
                     <div class="settings-card">
                         <div class="settings-header">
                             <div class="settings-icon">
-                                <div class="gear-icon">⚙️</div>
+                                <div class="gear-icon" id="settingsIcon">⚙️</div>
                             </div>
                             <h3 class="settings-title">Compression Settings</h3>
                         </div>
@@ -101,7 +89,7 @@
                             <div class="setting-group">
                                 <div class="setting-header">
                                     <div class="image-icon">
-                                        <div class="image-svg">🖼️</div>
+                                        <div class="image-svg" id="imageSettingsIcon">🖼️</div>
                                     </div>
                                     <label class="setting-label">Image Compression</label>
                                 </div>
@@ -129,7 +117,7 @@
                             <div class="setting-group">
                                 <div class="setting-header">
                                     <div class="video-icon">
-                                        <div class="video-svg">🎥</div>
+                                        <div class="video-svg" id="videoSettingsIcon">🎥</div>
                                     </div>
                                     <label class="setting-label">Video Compression</label>
                                 </div>
@@ -179,10 +167,10 @@
                         <div class="console-header" id="consoleHeader">
                             <div class="console-title-section">
                                 <div class="console-icon">
-                                    <div class="terminal-icon">></div>
+                                    <div class="terminal-icon" id="consoleIcon">></div>
                                 </div>
                                 <div class="console-text">
-                                    <h3 class="console-title">Console</h3>
+                                    <h3 class="console-title">Console Log</h3>
                                     <p class="log-count" id="logCount">0 log entries</p>
                                 </div>
                             </div>
@@ -199,7 +187,7 @@
                     <div class="progress-card" id="progressCard" style="display: none;">
                         <div class="progress-header">
                             <div class="progress-icon" id="progressIcon">
-                                <div class="icon-fallback">📁</div>
+                                <div class="icon-fallback" id="progressIconFallback">📁</div>
                             </div>
                             <div class="progress-text">
                                 <h3 class="progress-title" id="progressTitle">No file uploaded yet</h3>
@@ -220,81 +208,11 @@
                         <!-- Download Button (shown when ready) -->
                         <div class="download-ready" id="downloadReady" style="display: none;">
                             <button class="download-ready-button" id="downloadReadyBtn">
-                                <div class="button-icon">⬇️</div>
+                                <div class="button-icon" id="downloadReadyIcon">⬇️</div>
                                 <span>Download Compressed File</span>
                             </button>
                         </div>
 
-                        <!-- Quality Issues Section -->
-                        <div class="quality-issues-section" id="qualityIssuesSection" style="display: none;">
-                            <div class="quality-issues-header" id="qualityIssuesHeader">
-                                <div class="quality-issues-main">
-                                    <div class="quality-issues-text">
-                                        <h4 class="quality-issues-title">Quality Issues Detected</h4>
-                                        <p class="quality-issues-subtitle">Some files may have quality loss. Click preview to compare compression settings.</p>
-                                    </div>
-                                </div>
-                                <button class="quality-issues-toggle collapsed" id="qualityIssuesToggle">
-                                    <span class="toggle-icon">▲</span>
-                                </button>
-                            </div>
-                            
-                            <div class="quality-issues-content collapsed" id="qualityIssuesContent">
-                                <div class="flagged-files-list" id="flaggedFilesList">
-                                    <!-- Flagged files will be populated here -->
-                                </div>
-                                
-                                <div class="quality-actions">
-                                    <button class="reprocess-button" id="reprocessButton">
-                                        <div class="button-icon">🔄</div>
-                                        <span>Re-compress with Overrides</span>
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Image Preview Modal -->
-                        <div class="preview-modal" id="previewModal" style="display: none;">
-                            <div class="preview-modal-overlay" id="previewModalOverlay"></div>
-                            <div class="preview-modal-content">
-                                <div class="preview-modal-header">
-                                    <h3 class="preview-modal-title" id="previewModalTitle">Image Preview</h3>
-                                    <button class="preview-modal-close" id="previewModalClose">×</button>
-                                </div>
-                                <div class="preview-modal-body">
-                                    <div class="preview-comparison">
-                                        <div class="preview-original">
-                                            <h4 class="preview-label">Original</h4>
-                                            <div class="preview-image-container">
-                                                <img id="previewOriginalImage" class="preview-image" alt="Original">
-                                            </div>
-                                            <div class="preview-stats" id="previewOriginalStats"></div>
-                                        </div>
-                                        <div class="preview-compressed">
-                                            <h4 class="preview-label">Compressed</h4>
-                                            <div class="preview-image-container">
-                                                <img id="previewCompressedImage" class="preview-image" alt="Compressed">
-                                            </div>
-                                            <div class="preview-stats" id="previewCompressedStats"></div>
-                                        </div>
-                                    </div>
-                                    <div class="preview-controls">
-                                        <div class="preview-preset-selector">
-                                            <label>Change and Preview Compression Setting:</label>
-                                            <div class="preset-buttons">
-                                                <button class="preset-btn" data-preset="high_quality">High Quality</button>
-                                                <button class="preset-btn" data-preset="balanced">Balanced</button>
-                                                <button class="preset-btn" data-preset="aggressive">Aggressive</button>
-                                            </div>
-                                        </div>
-                                        <div class="preview-actions">
-                                            <button class="preview-keep-btn" id="previewKeepBtn">Keep Current Settings</button>
-                                            <button class="preview-apply-btn" id="previewApplyBtn">Apply This Setting</button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
 
                         <div class="stats-grid" id="statsGrid" style="display: none;">
                             <div class="stat-item">
@@ -321,13 +239,13 @@
             <!-- Action Button - Centered on Page -->
             <div class="action-section">
                 <button class="compress-button" id="compressBtn" disabled>
-                    <div class="button-icon">✨</div>
+                    <div class="button-icon" id="compressButtonIcon">✨</div>
                     <span>Start Compression</span>
                 </button>
                 
                 <div class="download-section" id="downloadSection" style="display: none;">
                     <button class="download-button" id="downloadBtn">
-                        <div class="button-icon">⬇️</div>
+                        <div class="button-icon" id="downloadButtonIcon">⬇️</div>
                         Download Compressed ZIP
                     </button>
                     <button class="reset-button" id="resetBtn">
@@ -336,13 +254,10 @@
                 </div>
             </div>
 
-        <!-- Footer -->
-        <div class="footer">
-            <p class="footer-text">built by <a href="https://alecsciandra.com" target="_blank" class="footer-link">alecsciandra.com</a></p>
-        </div>
     </div>
 
     <!-- Scripts -->
+    <script src="icons.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.min.js"></script>
     <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js"></script>

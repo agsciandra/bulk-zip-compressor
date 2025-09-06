@@ -1,5 +1,45 @@
 // Global variables
 let selectedFile = null;
+
+// Initialize all icons from the repository
+function initializeIcons() {
+    
+    // Upload icons
+    const uploadIcon = document.getElementById('uploadIcon');
+    if (uploadIcon) uploadIcon.textContent = getIcon('UPLOAD', 'UPLOAD');
+    
+    const folderIcon = document.getElementById('folderIcon');
+    if (folderIcon) folderIcon.textContent = getIcon('UPLOAD', 'FOLDER');
+    
+    // Settings icons
+    const settingsIcon = document.getElementById('settingsIcon');
+    if (settingsIcon) settingsIcon.textContent = getIcon('SETTINGS', 'GEAR');
+    
+    const imageSettingsIcon = document.getElementById('imageSettingsIcon');
+    if (imageSettingsIcon) imageSettingsIcon.textContent = getIcon('SETTINGS', 'IMAGE');
+    
+    const videoSettingsIcon = document.getElementById('videoSettingsIcon');
+    if (videoSettingsIcon) videoSettingsIcon.textContent = getIcon('SETTINGS', 'VIDEO');
+    
+    // Console icon
+    const consoleIcon = document.getElementById('consoleIcon');
+    if (consoleIcon) consoleIcon.textContent = getIcon('APP', 'TERMINAL');
+    
+    // Progress icon
+    const progressIconFallback = document.getElementById('progressIconFallback');
+    if (progressIconFallback) progressIconFallback.textContent = getIcon('PROGRESS', 'DEFAULT');
+    
+    // Download icons
+    const downloadReadyIcon = document.getElementById('downloadReadyIcon');
+    if (downloadReadyIcon) downloadReadyIcon.textContent = getIcon('DOWNLOAD', 'READY');
+    
+    const downloadButtonIcon = document.getElementById('downloadButtonIcon');
+    if (downloadButtonIcon) downloadButtonIcon.textContent = getIcon('DOWNLOAD', 'DOWNLOAD');
+    
+    // Compress button icon
+    const compressButtonIcon = document.getElementById('compressButtonIcon');
+    if (compressButtonIcon) compressButtonIcon.textContent = getIcon('COMPRESSION', 'START');
+}
 let ffmpeg = null;
 let isProcessing = false;
 let currentJob = null;
@@ -49,11 +89,7 @@ const COMPRESSION_PRESETS = {
 };
 
 let currentPreset = 'balanced';
-let qualityWarningsList = [];
-let fileOverrides = new Map(); // Map of fileName -> { preset, reason, originalSize, compressedSize }
-let flaggedFiles = [];
-let currentPreviewFile = null;
-let originalImageData = new Map(); // Store original image data for previews
+let fileOverrides = new Map(); // Map of fileName -> { quality, maxSizeMB }
 
 // DOM elements
 const fileDropZone = document.getElementById('fileDropZone');
@@ -93,12 +129,6 @@ const videoMaxSize = document.getElementById('videoMaxSize');
 const videoUnit = document.getElementById('videoUnit');
 const imageLimitText = document.getElementById('imageLimitText');
 const videoLimitText = document.getElementById('videoLimitText');
-const qualityIssuesSection = document.getElementById('qualityIssuesSection');
-const flaggedFilesList = document.getElementById('flaggedFilesList');
-const reprocessButton = document.getElementById('reprocessButton');
-const previewModal = document.getElementById('previewModal');
-const previewModalClose = document.getElementById('previewModalClose');
-const previewModalOverlay = document.getElementById('previewModalOverlay');
 const previewOriginalImage = document.getElementById('previewOriginalImage');
 const previewCompressedImage = document.getElementById('previewCompressedImage');
 const previewOriginalStats = document.getElementById('previewOriginalStats');
@@ -123,6 +153,9 @@ function initializeConsole() {
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', function() {
+    // Initialize all icons from the repository
+    initializeIcons();
+    
     initializeEventListeners();
     initializePresetValues();
     updateLimitTexts();
@@ -174,30 +207,6 @@ function initializeEventListeners() {
     consoleHeader.addEventListener('click', toggleConsole);
     downloadReadyBtn.addEventListener('click', downloadCompressedFile);
     
-    // Reprocess button
-    reprocessButton.addEventListener('click', reprocessWithOverrides);
-    
-    // Preview modal events
-    previewModalClose.addEventListener('click', closePreviewModal);
-    previewModalOverlay.addEventListener('click', closePreviewModal);
-    previewApplyBtn.addEventListener('click', applyPreviewSetting);
-    previewKeepBtn.addEventListener('click', closePreviewModal);
-    
-    // Preset button events in modal
-    document.addEventListener('click', (e) => {
-        if (e.target.classList.contains('preset-btn')) {
-            document.querySelectorAll('.preset-btn').forEach(btn => btn.classList.remove('active'));
-            e.target.classList.add('active');
-            
-            // Trigger real-time preview if modal is open
-            if (currentPreviewFile) {
-                updateCompressionPreview(e.target.dataset.preset);
-            }
-        }
-    });
-    
-    // Quality issues toggle
-    qualityIssuesHeader.addEventListener('click', toggleQualityIssues);
     
     // Handle window resize to update console state
     window.addEventListener('resize', function() {
@@ -217,7 +226,7 @@ function handleFileSelect(event) {
     if (file && file.name.toLowerCase().endsWith('.zip')) {
         selectFile(file);
     } else if (file) {
-        addLog('error', 'Please select a valid .zip file', '❌');
+        addLog('error', 'Please select a valid .zip file', 'ERROR');
         // Clear the input to allow re-selection
         event.target.value = '';
     }
@@ -243,7 +252,7 @@ function handleFileDrop(event) {
         if (file.name.toLowerCase().endsWith('.zip')) {
             selectFile(file);
         } else {
-            addLog('error', 'Please drop a valid .zip file', '❌');
+            addLog('error', 'Please drop a valid .zip file', 'ERROR');
         }
     }
 }
@@ -252,7 +261,7 @@ function selectFile(file) {
     // Check file size limit (500MB = 500 * 1024 * 1024 bytes)
     const maxFileSize = 500 * 1024 * 1024; // 500MB in bytes
     if (file.size > maxFileSize) {
-        addLog('error', `File too large. Maximum size is 500MB. Your file is ${formatFileSize(file.size)}.`, '❌');
+        addLog('error', `File too large. Maximum size is 500MB. Your file is ${formatFileSize(file.size)}.`, 'ERROR');
         // Clear the input to allow re-selection
         fileInput.value = '';
         return;
@@ -293,9 +302,14 @@ function selectFile(file) {
     fileDropZone.classList.add('file-selected');
     compressBtn.disabled = false;
     
-    addLog('info', `File selected: ${file.name}`, '📂');
-    addLog('info', 'Attempting to create compression job record...', '📝');
-    addLog('success', `Compression job record created successfully. Job ID: ${currentJob.id}`, '✅');
+    addLog('info', `File selected: ${file.name}`, 'FILE_SELECTED');
+    addLog('info', 'Attempting to create compression job record...', 'LOG');
+    addLog('success', `Compression job record created successfully. Job ID: ${currentJob.id}`, 'JOB_CREATED');
+    
+    // Auto-expand console when file is uploaded
+    if (!consoleExpanded) {
+        toggleConsole();
+    }
 }
 
 function formatFileSize(bytes) {
@@ -370,8 +384,8 @@ function selectPreset(preset) {
         showQualityWarning('Aggressive compression may significantly reduce image quality, especially for text and screenshots.', 'high');
     }
     
-    addLog('info', `Compression preset changed to: ${COMPRESSION_PRESETS[preset].name}`, '⚙️');
-    addLog('info', `Image settings: ${presetConfig.imageMaxSize} ${presetConfig.imageUnit}, Video settings: ${presetConfig.videoMaxSize} ${presetConfig.videoUnit}`, '⚙️');
+    addLog('info', `Compression preset changed to: ${COMPRESSION_PRESETS[preset].name}`, 'CUSTOM_SETTINGS');
+    addLog('info', `Image settings: ${presetConfig.imageMaxSize} ${presetConfig.imageUnit}, Video settings: ${presetConfig.videoMaxSize} ${presetConfig.videoUnit}`, 'CUSTOM_SETTINGS');
 }
 
 function showQualityWarning(message, severity = 'medium') {
@@ -386,99 +400,31 @@ function clearQualityWarnings() {
     qualityWarningsList = []; // Clear the global warnings array
 }
 
-function displayQualityIssues() {
-    if (flaggedFiles.length === 0) {
-        qualityIssuesSection.style.display = 'none';
-        return;
-    }
-    
-    flaggedFilesList.innerHTML = '';
-    
-    flaggedFiles.forEach(fileInfo => {
-        const fileItem = document.createElement('div');
-        fileItem.className = 'flagged-file-item';
-        
-        const compressionPercent = Math.round((1 - fileInfo.compressionRatio) * 100);
-        const originalSizeFormatted = formatFileSize(fileInfo.originalSize);
-        const compressedSizeFormatted = fileInfo.compressedSize ? formatFileSize(fileInfo.compressedSize) : 'Processing...';
-        
-        fileItem.innerHTML = `
-            <div class="flagged-file-info">
-                <div class="flagged-file-name">${fileInfo.fileName}</div>
-                <div class="flagged-file-stats">${originalSizeFormatted} → ${compressedSizeFormatted} (${compressionPercent}% reduction)</div>
-            </div>
-            <div class="flagged-file-controls">
-                <button class="preview-button" data-file="${fileInfo.fileName}">Preview</button>
-            </div>
-        `;
-        
-        flaggedFilesList.appendChild(fileItem);
-    });
-    
-    // Add event listeners for preview buttons
-    flaggedFilesList.querySelectorAll('.preview-button').forEach(button => {
-        button.addEventListener('click', (e) => {
-            const fileName = e.target.dataset.file;
-            openPreviewModal(fileName);
-        });
-    });
-    
-    qualityIssuesSection.style.display = 'block';
-    
-    // Start collapsed (triangle pointing up initially)
-    qualityIssuesContent.classList.add('collapsed');
-    qualityIssuesToggle.classList.add('collapsed');
-    
-    // Always show re-compress button when there are flagged files
-    reprocessButton.style.display = 'inline-flex';
-}
 
-// Toggle quality issues section
-function toggleQualityIssues() {
-    qualityIssuesContent.classList.toggle('collapsed');
-    qualityIssuesToggle.classList.toggle('collapsed');
-}
 
-// Quality assessment function
-function getQualityAssessment(compressionRatio, preset) {
-    const spaceSaved = Math.round((1 - compressionRatio) * 100);
-    
-    if (preset === 'high_quality') {
-        if (spaceSaved < 20) {
-            return 'Excellent quality preserved with minimal compression';
-        } else if (spaceSaved < 40) {
-            return 'High quality maintained with good compression';
-        } else {
-            return 'Good quality with significant space savings';
-        }
-    } else if (preset === 'balanced') {
-        if (spaceSaved < 30) {
-            return 'High quality with moderate compression';
-        } else if (spaceSaved < 60) {
-            return 'Good balance of quality and compression';
-        } else {
-            return 'Acceptable quality with high compression';
-        }
-    } else { // aggressive
-        if (spaceSaved < 50) {
-            return 'Moderate quality loss with good compression';
-        } else if (spaceSaved < 80) {
-            return 'Significant compression with noticeable quality reduction';
-        } else {
-            return 'Maximum compression with substantial quality reduction';
-        }
-    }
-}
 
 // Logging functions
-function addLog(type, message, icon = '📝') {
+function addLog(type, message, iconKey = 'LOG', additionalData = null) {
+    // Get icon from repository based on type and key
+    let icon = '📝'; // fallback
+    if (typeof iconKey === 'string' && iconKey.includes('_')) {
+        // If it's a key like 'COMPRESSION_START', use it directly
+        icon = getIcon('COMPRESSION', iconKey) || getIcon('CONSOLE', iconKey) || iconKey;
+    } else if (typeof iconKey === 'string') {
+        // If it's a simple key, try different categories
+        icon = getIcon('CONSOLE', iconKey) || getIcon('COMPRESSION', iconKey) || getIcon('STATUS', iconKey) || iconKey;
+    } else {
+        // If it's already an emoji/icon, use it directly
+        icon = iconKey;
+    }
     const timestamp = new Date();
     const logEntry = {
         id: logs.length + 1,
         type: type,
         message: message,
         icon: icon,
-        timestamp: timestamp
+        timestamp: timestamp,
+        additionalData: additionalData
     };
     
     logs.push(logEntry);
@@ -495,10 +441,23 @@ function addLog(type, message, icon = '📝') {
     // Create log entry element
     const logElement = document.createElement('div');
     logElement.className = `log-entry log-${type}`;
+    
+    let additionalHTML = '';
+    if (additionalData && additionalData.originalSize && additionalData.compressedSize) {
+        const originalSizeFormatted = formatFileSize(additionalData.originalSize);
+        const compressedSizeFormatted = formatFileSize(additionalData.compressedSize);
+        additionalHTML = `<div class="log-size-reduction">${originalSizeFormatted} → ${compressedSizeFormatted}</div>`;
+    }
+    
+    if (additionalData && additionalData.previewData) {
+        additionalHTML += `<button class="log-preview-btn" data-file="${additionalData.fileName}" title="Preview image">Preview</button>`;
+    }
+    
     logElement.innerHTML = `
         <div class="log-icon">${icon}</div>
         <div class="log-content">
             <div class="log-message">${message}</div>
+            ${additionalHTML}
             <div class="log-timestamp">${formatTimestamp(timestamp)}</div>
         </div>
     `;
@@ -506,12 +465,156 @@ function addLog(type, message, icon = '📝') {
     // Add to console
     consoleLogs.appendChild(logElement);
     
+    // Add preview button event listener if it exists
+    if (additionalData && additionalData.previewData) {
+        const previewBtn = logElement.querySelector('.log-preview-btn');
+        previewBtn.addEventListener('click', () => {
+            openImagePreview(additionalData.fileName, additionalData.originalData, additionalData.compressedData);
+        });
+    }
+    
     // Auto-scroll to bottom
     consoleLogs.scrollTop = consoleLogs.scrollHeight;
 }
 
 function formatTimestamp(timestamp) {
     return new Date(timestamp).toLocaleTimeString();
+}
+
+// Image preview function
+function openImagePreview(fileName, originalData, compressedData) {
+    // Get current compression settings for this file
+    const currentOverride = fileOverrides.get(fileName);
+    const currentQuality = currentOverride ? currentOverride.quality : COMPRESSION_PRESETS[currentPreset].imageQuality;
+    const currentMaxSize = currentOverride ? currentOverride.maxSizeMB : getImageMaxSizeMB();
+    
+    // Create a modal for image preview with compression settings
+    const modal = document.createElement('div');
+    modal.className = 'image-preview-modal';
+    modal.innerHTML = `
+        <div class="image-preview-overlay"></div>
+        <div class="image-preview-content">
+            <div class="image-preview-header">
+                <h3>Preview: ${fileName}</h3>
+                <button class="image-preview-close">×</button>
+            </div>
+            <div class="image-preview-body">
+                <div class="image-preview-comparison">
+                    <div class="image-preview-original">
+                        <h4>Original</h4>
+                        <img src="${originalData}" alt="Original" class="preview-image">
+                    </div>
+                    <div class="image-preview-compressed">
+                        <h4>Compressed</h4>
+                        <img src="${compressedData}" alt="Compressed" class="preview-image">
+                    </div>
+                </div>
+                
+                <div class="image-preview-settings">
+                    <h4>Compression Settings for this Image</h4>
+                    <div class="settings-row">
+                        <label for="preview-quality">Quality (0.1 - 1.0):</label>
+                        <input type="number" id="preview-quality" min="0.1" max="1.0" step="0.05" value="${currentQuality}">
+                    </div>
+                    <div class="settings-row">
+                        <label for="preview-max-size">Max Size (MB):</label>
+                        <input type="number" id="preview-max-size" min="0.1" max="50" step="0.1" value="${currentMaxSize}">
+                    </div>
+                    <div class="settings-actions">
+                        <button class="preview-apply-settings" data-file="${fileName}">Apply These Settings</button>
+                        <button class="preview-reset-settings" data-file="${fileName}">Reset to Default</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    document.body.style.overflow = 'hidden';
+    
+    // Close modal functionality
+    const closeBtn = modal.querySelector('.image-preview-close');
+    const overlay = modal.querySelector('.image-preview-overlay');
+    
+    closeBtn.addEventListener('click', () => {
+        document.body.removeChild(modal);
+        document.body.style.overflow = '';
+    });
+    
+    overlay.addEventListener('click', () => {
+        document.body.removeChild(modal);
+        document.body.style.overflow = '';
+    });
+    
+    // Apply settings functionality
+    const applyBtn = modal.querySelector('.preview-apply-settings');
+    const resetBtn = modal.querySelector('.preview-reset-settings');
+    
+    applyBtn.addEventListener('click', () => {
+        const quality = parseFloat(modal.querySelector('#preview-quality').value);
+        const maxSize = parseFloat(modal.querySelector('#preview-max-size').value);
+        
+        // Store the override
+        fileOverrides.set(fileName, {
+            quality: quality,
+            maxSizeMB: maxSize
+        });
+        
+        addLog('info', `Custom compression settings applied to ${fileName}`, 'CUSTOM_SETTINGS');
+        addLog('info', `Quality: ${quality}, Max Size: ${maxSize}MB`, 'STATS');
+        
+        // Show recompress prompt
+        showRecompressPrompt();
+        
+        // Close modal
+        document.body.removeChild(modal);
+        document.body.style.overflow = '';
+    });
+    
+    resetBtn.addEventListener('click', () => {
+        // Remove override
+        fileOverrides.delete(fileName);
+        
+        addLog('info', `Reset ${fileName} to default compression settings`, 'RESET_SETTINGS');
+        
+        // Close modal
+        document.body.removeChild(modal);
+        document.body.style.overflow = '';
+    });
+}
+
+// Show recompress prompt
+function showRecompressPrompt() {
+    // Check if recompress prompt already exists
+    if (document.getElementById('recompressPrompt')) {
+        return;
+    }
+    
+    const prompt = document.createElement('div');
+    prompt.id = 'recompressPrompt';
+    prompt.className = 'recompress-prompt';
+    prompt.innerHTML = `
+        <div class="recompress-content">
+            <div class="recompress-icon">🔄</div>
+            <div class="recompress-text">
+                <h4>Compression Settings Updated</h4>
+                <p>You've changed compression settings for specific files. Click below to recompress the ZIP with the new settings.</p>
+            </div>
+            <button class="recompress-button" id="recompressBtn">Recompress ZIP</button>
+        </div>
+    `;
+    
+    // Insert after the console card
+    const consoleCard = document.querySelector('.console-card');
+    consoleCard.parentNode.insertBefore(prompt, consoleCard.nextSibling);
+    
+    // Add event listener for recompress button
+    document.getElementById('recompressBtn').addEventListener('click', () => {
+        // Remove the prompt
+        prompt.remove();
+        // Start recompression
+        startCompression();
+    });
 }
 
 function clearLogs() {
@@ -571,33 +674,29 @@ function showStats(compressionStats) {
 // Main compression function
 async function startCompression() {
     if (!selectedFile || !currentJob) {
-        addLog('error', 'Cannot start. No file selected or job record is missing.', '❌');
+        addLog('error', 'Cannot start. No file selected or job record is missing.', 'ERROR');
         return;
     }
 
-    addLog('info', 'Start Compression button clicked. Beginning process...', '🚀');
+    addLog('info', 'Start Compression button clicked. Beginning process...', 'COMPRESSION_START');
     setProcessingState(true);
     updateProgress(10, 'processing');
 
     try {
         // Step 1: Upload file
-        addLog('info', 'Step 1: Uploading ZIP file to server...', '📤');
+        addLog('info', 'Step 1: Uploading ZIP file to server...', 'UPLOAD');
         updateProgress(20, 'processing');
         
         // Simulate file upload (in real implementation, this would upload to server)
         await new Promise(resolve => setTimeout(resolve, 1000));
-        addLog('success', 'Step 1 complete. File uploaded successfully.', '✅');
+        addLog('success', 'Step 1 complete. File uploaded successfully.', 'SUCCESS');
         
         // Step 2: Analyze ZIP contents
-        addLog('info', 'Step 2: Analyzing ZIP contents and compressing files...', '🧠');
+        addLog('info', 'Step 2: Analyzing ZIP contents and compressing files...', 'COMPRESSION_PROGRESS');
         updateProgress(40, 'processing');
 
         // Load FFmpeg (optional for video compression)
-        try {
-            await loadFFmpeg();
-        } catch (error) {
-            addLog('warning', 'FFmpeg failed to load. Video compression will be skipped, but image compression will still work.', '⚠️');
-        }
+        await loadFFmpeg();
         
         // Read the zip file
         const zip = await JSZip.loadAsync(selectedFile);
@@ -608,7 +707,7 @@ async function startCompression() {
             !zip.files[file].dir
         );
 
-        addLog('info', `Found ${processableFiles.length} files to process`, '📊');
+        addLog('info', `Found ${processableFiles.length} files to process`, 'STATS');
         
         // Clear previous flagged files
         flaggedFiles = [];
@@ -618,10 +717,10 @@ async function startCompression() {
         const videoFiles = processableFiles.filter(file => isVideoFile(file.split('.').pop().toLowerCase()));
         
         if (imageFiles.length > 0) {
-            addLog('info', `Found ${imageFiles.length} image files - smart compression will analyze each for optimal quality`, '🔍');
+            addLog('info', `Found ${imageFiles.length} image files - smart compression will analyze each for optimal quality`, 'COMPRESSION_PROGRESS');
         }
         if (videoFiles.length > 0) {
-            addLog('info', `Found ${videoFiles.length} video files - video compression not yet implemented`, '🎥');
+            addLog('info', `Found ${videoFiles.length} video files - video compression not yet implemented`, 'VIDEO');
         }
 
         let totalOriginalSize = 0;
@@ -650,7 +749,7 @@ async function startCompression() {
             if (isImageFile(fileExtension)) {
                 try {
                     const imageFile = new File([fileData], fileName, { type: `image/${fileExtension}` });
-                    const compressedImageFile = await smartImageCompression(imageFile, fileName, currentPreset);
+                    const compressedImageFile = await compressImage(imageFile, fileName);
                     
                     compressedData = await compressedImageFile.arrayBuffer();
                     compressedData = new Uint8Array(compressedData);
@@ -661,18 +760,42 @@ async function startCompression() {
                     compressionRatio = compressedData.length / fileSize;
                     const spaceSaved = Math.round((1 - compressionRatio) * 100);
                     
-                    addLog('success', `Smart compressed image: ${fileName} (${spaceSaved}% reduction)`, '🖼️');
+                    // Store image data for preview
+                    const originalReader = new FileReader();
+                    const compressedReader = new FileReader();
+                    let originalDataUrl = '';
+                    let compressedDataUrl = '';
+                    
+                    originalReader.onload = () => {
+                        originalDataUrl = originalReader.result;
+                    };
+                    compressedReader.onload = () => {
+                        compressedDataUrl = compressedReader.result;
+                        
+                        // Log with size reduction and preview data
+                        addLog('success', `Compressed image: ${fileName} (${spaceSaved}% reduction)`, 'IMAGE', {
+                            originalSize: fileSize,
+                            compressedSize: compressedData.length,
+                            fileName: fileName,
+                            previewData: true,
+                            originalData: originalDataUrl,
+                            compressedData: compressedDataUrl
+                        });
+                    };
+                    
+                    originalReader.readAsDataURL(imageFile);
+                    compressedReader.readAsDataURL(compressedImageFile);
                 } catch (error) {
-                    addLog('warning', `Failed to compress image ${fileName}: ${error.message}`, '⚠️');
+                    addLog('warning', `Failed to compress image ${fileName}: ${error.message}`, 'WARNING');
                 }
             } else if (isVideoFile(fileExtension) && ffmpeg) {
                 try {
                     // Video compression would go here
                     // For now, just add the original file
-                    addLog('info', `Video file ${fileName} - compression not implemented yet`, '🎥');
+                    addLog('info', `Video file ${fileName} - video compression requires FFmpeg to be loaded`, 'VIDEO');
                     videosCompressed++;
                 } catch (error) {
-                    addLog('warning', `Failed to process video ${fileName}: ${error.message}`, '⚠️');
+                    addLog('warning', `Failed to process video ${fileName}: ${error.message}`, 'WARNING');
                 }
             }
 
@@ -682,7 +805,7 @@ async function startCompression() {
         }
 
         // Step 3: Create final ZIP
-        addLog('info', 'Step 3: Creating compressed ZIP file...', '📦');
+        addLog('info', 'Step 3: Creating compressed ZIP file...', 'COMPRESSION_PROGRESS');
         updateProgress(90, 'processing');
 
         const zipBlob = await compressedZip.generateAsync({ type: 'blob' });
@@ -698,19 +821,16 @@ async function startCompression() {
             videosCompressed: videosCompressed
         });
         
-        addLog('success', `Step 3 complete. Compression finished! Saved ${spaceSavedPercent}% space.`, '🎉');
-        addLog('success', `Original size: ${formatFileSize(totalOriginalSize)}`, '📊');
-        addLog('success', `Compressed size: ${formatFileSize(totalCompressedSize)}`, '📊');
+        addLog('success', `Step 3 complete. Compression finished! Saved ${spaceSavedPercent}% space.`, 'COMPRESSION_COMPLETE');
+        addLog('success', `Original size: ${formatFileSize(totalOriginalSize)}`, 'STATS');
+        addLog('success', `Compressed size: ${formatFileSize(totalCompressedSize)}`, 'STATS');
         
         // Add quality assessment summary
         if (imagesCompressed > 0) {
             const avgCompressionRatio = totalCompressedSize / totalOriginalSize;
-            const qualityAssessment = getQualityAssessment(avgCompressionRatio, currentPreset);
-            addLog('info', `Quality Assessment: ${qualityAssessment}`, '🔍');
+            addLog('info', `Average compression ratio: ${Math.round((1 - avgCompressionRatio) * 100)}% space saved`, 'STATS');
         }
         
-        // Display quality issues if any
-        displayQualityIssues();
         
         // Show download ready button
         downloadReady.style.display = 'block';
@@ -726,7 +846,7 @@ async function startCompression() {
         
     } catch (error) {
         updateProgress(0, 'failed');
-        addLog('error', `Compression process failed: ${error.message}`, '❌');
+        addLog('error', `Compression process failed: ${error.message}`, 'ERROR');
         
         if (currentJob) {
             currentJob.status = 'failed';
@@ -746,233 +866,33 @@ function isVideoFile(extension) {
     return ['mp4', 'mov', 'webm'].includes(extension);
 }
 
-// Content analysis functions
-async function analyzeImageContent(imageFile) {
-    return new Promise((resolve) => {
-        const img = new Image();
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        
-        img.onload = () => {
-            canvas.width = img.width;
-            canvas.height = img.height;
-            ctx.drawImage(img, 0, 0);
-            
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const analysis = analyzeImageData(imageData, img.width, img.height);
-            resolve(analysis);
-        };
-        
-        img.onerror = () => {
-            resolve({
-                hasText: false,
-                isScreenshot: false,
-                complexity: 'medium',
-                recommendedQuality: 0.85
-            });
-        };
-        
-        img.src = URL.createObjectURL(imageFile);
-    });
-}
 
-function analyzeImageData(imageData, width, height) {
-    const data = imageData.data;
-    const pixelCount = width * height;
-    
-    // Analyze for text characteristics
-    let edgePixels = 0;
-    let colorVariations = 0;
-    let sharpTransitions = 0;
-    const colorMap = new Map();
-    
-    // Sample every 4th pixel for performance
-    for (let i = 0; i < data.length; i += 16) {
-        const r = data[i];
-        const g = data[i + 1];
-        const b = data[i + 2];
-        const a = data[i + 3];
-        
-        if (a < 128) continue; // Skip transparent pixels
-        
-        // Count color variations
-        const colorKey = `${Math.floor(r/32)}-${Math.floor(g/32)}-${Math.floor(b/32)}`;
-        colorMap.set(colorKey, (colorMap.get(colorKey) || 0) + 1);
-        
-        // Detect edges (simplified edge detection)
-        if (i + 4 < data.length) {
-            const nextR = data[i + 4];
-            const nextG = data[i + 5];
-            const nextB = data[i + 6];
-            
-            const colorDiff = Math.abs(r - nextR) + Math.abs(g - nextG) + Math.abs(b - nextB);
-            if (colorDiff > 100) {
-                edgePixels++;
-                if (colorDiff > 200) {
-                    sharpTransitions++;
-                }
-            }
-        }
-    }
-    
-    const edgeRatio = edgePixels / (pixelCount / 4);
-    const colorCount = colorMap.size;
-    const sharpTransitionRatio = sharpTransitions / (pixelCount / 4);
-    
-    // Determine if image likely contains text
-    const hasText = edgeRatio > 0.1 && sharpTransitionRatio > 0.05;
-    
-    // Determine if it's likely a screenshot
-    const isScreenshot = hasText && colorCount < 50 && edgeRatio > 0.15;
-    
-    // Determine complexity
-    let complexity = 'low';
-    if (colorCount > 100 || edgeRatio > 0.2) {
-        complexity = 'high';
-    } else if (colorCount > 50 || edgeRatio > 0.1) {
-        complexity = 'medium';
-    }
-    
-    // Recommend quality based on analysis
-    let recommendedQuality = 0.85;
-    if (hasText && !isScreenshot) {
-        recommendedQuality = 0.95; // High quality for text
-    } else if (isScreenshot) {
-        recommendedQuality = 0.9; // High quality for screenshots
-    } else if (complexity === 'high') {
-        recommendedQuality = 0.8; // Lower quality for complex images
-    }
-    
-    return {
-        hasText,
-        isScreenshot,
-        complexity,
-        recommendedQuality,
-        edgeRatio,
-        colorCount,
-        sharpTransitionRatio
-    };
-}
-
-// Smart compression function
-async function smartImageCompression(imageFile, fileName, preset) {
-    const analysis = await analyzeImageContent(imageFile);
+// Simple image compression function
+async function compressImage(imageFile, fileName) {
+    const presetConfig = COMPRESSION_PRESETS[currentPreset];
     
     // Check for file-specific override
     const override = fileOverrides.get(fileName);
-    const effectivePreset = override ? override.preset : preset;
-    const presetConfig = COMPRESSION_PRESETS[effectivePreset];
+    const quality = override ? override.quality : presetConfig.imageQuality;
+    const maxSizeMB = override ? override.maxSizeMB : getImageMaxSizeMB();
     
     if (override) {
-        addLog('info', `Using override for ${fileName}: ${COMPRESSION_PRESETS[effectivePreset].name}`, '⚙️');
+        addLog('info', `Using custom settings for ${fileName}: Quality ${quality}, Max Size ${maxSizeMB}MB`, 'CUSTOM_SETTINGS');
     }
     
-    // Determine compression settings based on content analysis
-    let compressionSettings = {
-        maxSizeMB: getImageMaxSizeMB() * presetConfig.maxSizeMultiplier,
+    const compressionSettings = {
+        maxSizeMB: maxSizeMB,
         maxWidthOrHeight: 1920,
         useWebWorker: true,
-        fileType: 'image/jpeg'
+        initialQuality: quality
     };
-    
-    // Smart file type selection based on content analysis
-    if (analysis.isScreenshot || (analysis.hasText && analysis.complexity === 'low')) {
-        // Use PNG for screenshots and simple text images to preserve sharp edges
-        compressionSettings.fileType = 'image/png';
-        addLog('info', `Using PNG format for ${fileName} to preserve text clarity`, '📝');
-    } else if (analysis.complexity === 'high' && !analysis.hasText) {
-        // Use WebP for complex images without text for better compression
-        compressionSettings.fileType = 'image/webp';
-        addLog('info', `Using WebP format for ${fileName} for optimal compression`, '🖼️');
-    }
-    
-    // Adjust quality based on content analysis
-    if (presetConfig.textDetectionEnabled && analysis.hasText) {
-        compressionSettings.initialQuality = Math.max(analysis.recommendedQuality, 0.9);
-        addLog('info', `Text detected in ${fileName}, using high quality compression`, '📝');
-    } else if (analysis.isScreenshot) {
-        compressionSettings.initialQuality = 0.95;
-        addLog('info', `Screenshot detected in ${fileName}, using maximum quality`, '📸');
-    } else {
-        compressionSettings.initialQuality = presetConfig.imageQuality;
-    }
-    
-    // Check for potential quality issues with enhanced detection
-    const originalSizeMB = imageFile.size / (1024 * 1024);
-    const targetSizeMB = compressionSettings.maxSizeMB;
-    const compressionRatio = targetSizeMB / originalSizeMB;
-    
-    let warningReason = '';
-    let severity = 'low';
-    
-    // Enhanced warning detection
-    if (compressionRatio < 0.2) {
-        warningReason = 'Extremely aggressive compression will cause significant quality loss';
-        severity = 'high';
-    } else if (compressionRatio < 0.3 && presetConfig.aggressiveCompression) {
-        warningReason = 'Very aggressive compression may cause quality loss';
-        severity = 'high';
-    } else if (compressionRatio < 0.5) {
-        warningReason = 'Moderate compression may slightly reduce quality';
-        severity = 'medium';
-    } else if (analysis.hasText && compressionRatio < 0.7) {
-        warningReason = 'Text content may lose sharpness with this compression level';
-        severity = 'medium';
-    } else if (analysis.isScreenshot && compressionRatio < 0.8) {
-        warningReason = 'Screenshot may lose clarity with this compression level';
-        severity = 'medium';
-    }
-    
-    // Store file information for potential overrides
-    const fileInfo = {
-        fileName,
-        originalSize: imageFile.size,
-        analysis,
-        compressionRatio,
-        warningReason,
-        severity,
-        preset: preset
-    };
-    
-    if (warningReason) {
-        flaggedFiles.push(fileInfo);
-        addLog('warning', `${fileName}: ${warningReason}`, '⚠️');
-    }
     
     try {
         const compressedImageFile = await imageCompression(imageFile, compressionSettings);
-        
-        // Store compressed size for display
-        fileInfo.compressedSize = compressedImageFile.size;
-        
-        // Store compressed image data for preview
-        const reader = new FileReader();
-        reader.onload = () => {
-            fileInfo.compressedData = reader.result;
-        };
-        reader.readAsDataURL(compressedImageFile);
-        
-        // Store original image data for preview (only once)
-        if (!originalImageData.has(fileName)) {
-            const originalReader = new FileReader();
-            originalReader.onload = () => {
-                originalImageData.set(fileName, originalReader.result);
-            };
-            originalReader.readAsDataURL(imageFile);
-        }
-        
         return compressedImageFile;
     } catch (error) {
-        addLog('warning', `Failed to compress ${fileName} with smart settings, falling back to standard compression`, '⚠️');
-        
-        // Fallback to standard compression
-        const fallbackSettings = {
-            maxSizeMB: getImageMaxSizeMB(),
-            maxWidthOrHeight: 1920,
-            useWebWorker: true
-        };
-        
-        return await imageCompression(imageFile, fallbackSettings);
+        addLog('warning', `Failed to compress ${fileName}, using original file`, 'WARNING');
+        return imageFile;
     }
 }
 
@@ -980,21 +900,40 @@ async function smartImageCompression(imageFile, fileName, preset) {
 async function loadFFmpeg() {
     if (ffmpeg) return;
     
-    addLog('info', 'Loading FFmpeg...', '⏱️');
+    // Check if running from file:// protocol (local file)
+    if (window.location.protocol === 'file:') {
+        addLog('info', 'Running from local file - FFmpeg requires a web server', 'INFO');
+        addLog('info', 'Video compression disabled. Image compression will still work.', 'INFO');
+        return; // Don't try to load FFmpeg from file://
+    }
+    
+    addLog('info', 'Loading FFmpeg...', 'LOADING');
     
     try {
         const { FFmpeg } = FFmpegWASM;
         ffmpeg = new FFmpeg();
         
+        // Use jsDelivr CDN which has better CORS support
         await ffmpeg.load({
-            coreURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js',
-            wasmURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm',
+            coreURL: 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js',
+            wasmURL: 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm',
         });
         
-        addLog('success', 'FFmpeg loaded successfully', '✅');
+        addLog('success', 'FFmpeg loaded successfully', 'SUCCESS');
     } catch (error) {
-        addLog('error', `Failed to load FFmpeg: ${error.message}`, '❌');
-        throw error;
+        // Try alternative CDN if first one fails
+        try {
+            addLog('info', 'Trying alternative FFmpeg CDN...', 'LOADING');
+            await ffmpeg.load({
+                coreURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js',
+                wasmURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm',
+            });
+            addLog('success', 'FFmpeg loaded successfully from alternative CDN', 'SUCCESS');
+        } catch (secondError) {
+            addLog('warning', 'FFmpeg failed to load from both CDNs', 'WARNING');
+            addLog('info', 'Video compression will be disabled. Image compression will still work.', 'INFO');
+            // Don't throw error, just disable video compression
+        }
     }
 }
 
@@ -1033,159 +972,13 @@ function downloadCompressedFile() {
         link.click();
         document.body.removeChild(link);
         
-        addLog('success', 'Download started', '⬇️');
+        addLog('success', 'Download started', 'DOWNLOAD');
     } else {
-        addLog('error', 'No compressed file available for download', '❌');
+        addLog('error', 'No compressed file available for download', 'ERROR');
     }
 }
 
-// Reprocess with overrides function
-async function reprocessWithOverrides() {
-    if (fileOverrides.size === 0) {
-        addLog('warning', 'No overrides set for reprocessing', '⚠️');
-        return;
-    }
-    
-    addLog('info', 'Starting reprocessing with file-specific overrides...', '🔄');
-    setProcessingState(true);
-    
-    try {
-        // Clear previous results
-        flaggedFiles = [];
-        fileOverrides.clear();
-        
-        // Restart compression with overrides
-        await startCompression();
-        
-        addLog('success', 'Reprocessing completed with overrides applied', '✅');
-    } catch (error) {
-        addLog('error', `Reprocessing failed: ${error.message}`, '❌');
-    } finally {
-        setProcessingState(false);
-    }
-}
 
-// Preview modal functions
-function openPreviewModal(fileName) {
-    const fileInfo = flaggedFiles.find(f => f.fileName === fileName);
-    if (!fileInfo) return;
-    
-    currentPreviewFile = fileName;
-    
-    // Set modal title
-    document.getElementById('previewModalTitle').textContent = `Preview: ${fileName}`;
-    
-    // Load original image
-    const originalData = originalImageData.get(fileName);
-    if (originalData) {
-        previewOriginalImage.src = originalData;
-        previewOriginalStats.textContent = `Original: ${formatFileSize(fileInfo.originalSize)}`;
-    }
-    
-    // Load compressed image
-    previewCompressedImage.src = fileInfo.compressedData || '';
-    previewCompressedStats.textContent = `Compressed: ${formatFileSize(fileInfo.compressedSize)} (${Math.round((1 - fileInfo.compressionRatio) * 100)}% reduction)`;
-    
-    // Set active preset button
-    document.querySelectorAll('.preset-btn').forEach(btn => {
-        btn.classList.remove('active');
-        if (btn.dataset.preset === fileInfo.preset) {
-            btn.classList.add('active');
-        }
-    });
-    
-    // Show modal
-    previewModal.style.display = 'flex';
-    document.body.style.overflow = 'hidden';
-}
-
-function closePreviewModal() {
-    previewModal.style.display = 'none';
-    document.body.style.overflow = '';
-    currentPreviewFile = null;
-}
-
-function applyPreviewSetting() {
-    if (!currentPreviewFile) return;
-    
-    const activePreset = document.querySelector('.preset-btn.active');
-    if (!activePreset) return;
-    
-    const newPreset = activePreset.dataset.preset;
-    
-    // Update the override
-    fileOverrides.set(currentPreviewFile, {
-        preset: newPreset,
-        reason: flaggedFiles.find(f => f.fileName === currentPreviewFile)?.warningReason || '',
-        originalSize: flaggedFiles.find(f => f.fileName === currentPreviewFile)?.originalSize || 0,
-        compressedSize: flaggedFiles.find(f => f.fileName === currentPreviewFile)?.compressedSize || 0
-    });
-    
-    // Re-compress button is always shown when there are flagged files
-    
-    addLog('info', `Override set for ${currentPreviewFile}: ${COMPRESSION_PRESETS[newPreset].name}`, '⚙️');
-    closePreviewModal();
-}
-
-// Real-time compression preview
-async function updateCompressionPreview(preset) {
-    if (!currentPreviewFile) return;
-    
-    const fileInfo = flaggedFiles.find(f => f.fileName === currentPreviewFile);
-    if (!fileInfo) return;
-    
-    // Get original image data
-    const originalData = originalImageData.get(currentPreviewFile);
-    if (!originalData) return;
-    
-    try {
-        // Show loading state
-        previewCompressedStats.textContent = 'Compressing...';
-        
-        // Create a temporary image element to get the file
-        const img = new Image();
-        img.onload = async () => {
-            // Create canvas to convert back to file
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            canvas.width = img.width;
-            canvas.height = img.height;
-            ctx.drawImage(img, 0, 0);
-            
-            canvas.toBlob(async (blob) => {
-                if (!blob) return;
-                
-                // Create a temporary file for compression
-                const tempFile = new File([blob], currentPreviewFile, { type: blob.type });
-                
-                // Use direct compression instead of smartImageCompression to avoid file overrides
-                const presetConfig = COMPRESSION_PRESETS[preset];
-                const compressionSettings = {
-                    maxSizeMB: getImageMaxSizeMB() * presetConfig.maxSizeMultiplier,
-                    maxWidthOrHeight: 1920,
-                    useWebWorker: true,
-                    fileType: 'image/jpeg',
-                    initialQuality: presetConfig.imageQuality
-                };
-                
-                // Compress with the selected preset
-                const compressedFile = await imageCompression(tempFile, compressionSettings);
-                
-                // Update the preview image
-                const reader = new FileReader();
-                reader.onload = () => {
-                    previewCompressedImage.src = reader.result;
-                    previewCompressedStats.textContent = `Compressed: ${formatFileSize(compressedFile.size)} (${Math.round((1 - compressedFile.size / fileInfo.originalSize) * 100)}% reduction)`;
-                };
-                reader.readAsDataURL(compressedFile);
-            });
-        };
-        img.src = originalData;
-    } catch (error) {
-        console.error('Error updating compression preview:', error);
-        previewCompressedStats.textContent = 'Error updating preview';
-    }
-}
 
 // Reset function
 function resetAll() {
@@ -1194,11 +987,7 @@ function resetAll() {
     stats = null;
     downloadUrl = null;
     consoleExpanded = false;
-    qualityWarningsList = [];
-    flaggedFiles = [];
     fileOverrides.clear();
-    originalImageData.clear();
-    currentPreviewFile = null;
     
     // Reset UI
     uploadContent.style.display = 'block';
@@ -1208,13 +997,6 @@ function resetAll() {
     downloadSection.style.display = 'none';
     statsGrid.style.display = 'none';
     progressCard.style.display = 'none';
-    qualityIssuesSection.style.display = 'none';
-    reprocessButton.style.display = 'none';
-    previewModal.style.display = 'none';
-    
-    // Reset quality issues collapsible state (start collapsed)
-    qualityIssuesContent.classList.add('collapsed');
-    qualityIssuesToggle.classList.add('collapsed');
     
     // Reset progress card to initial state
     initializeProgressCard();
@@ -1237,18 +1019,18 @@ function setProcessingState(processing) {
     compressBtn.disabled = processing;
     
     if (processing) {
-        compressBtn.innerHTML = '<div class="button-icon">⚡</div><span>Compressing...</span>';
+        compressBtn.innerHTML = `<div class="button-icon">${getIcon('COMPRESSION', 'PROCESSING')}</div><span>Compressing...</span>`;
     } else {
         // Only reset to "Start Compression" if not already set to "Compress Another ZIP"
         if (!compressBtn.innerHTML.includes('Compress Another ZIP')) {
-            compressBtn.innerHTML = '<div class="button-icon">✨</div><span>Start Compression</span>';
+            compressBtn.innerHTML = `<div class="button-icon">${getIcon('COMPRESSION', 'START')}</div><span>Start Compression</span>`;
         }
     }
 }
 
 // Update button after compression completion
 function updateButtonAfterCompression() {
-    compressBtn.innerHTML = '<div class="button-icon">🔄</div><span>Compress Another ZIP</span>';
+    compressBtn.innerHTML = `<div class="button-icon">${getIcon('COMPRESSION', 'COMPRESS_ANOTHER')}</div><span>Compress Another ZIP</span>`;
     compressBtn.disabled = false;
     compressBtn.onclick = () => {
         // Scroll to top
@@ -1261,7 +1043,7 @@ function updateButtonAfterCompression() {
         fileDropZone.classList.remove('file-selected');
         compressBtn.disabled = true;
         // Reset button to original state
-        compressBtn.innerHTML = '<div class="button-icon">✨</div><span>Start Compression</span>';
+        compressBtn.innerHTML = `<div class="button-icon">${getIcon('COMPRESSION', 'START')}</div><span>Start Compression</span>`;
         compressBtn.onclick = startCompression;
         // Clear file input
         fileInput.value = '';
